@@ -8,8 +8,9 @@ integration only creates a Merlin firmware update entity.
 
 ## What it does
 
-- Logs in to the router after Home Assistant startup.
-- Reads the router firmware update signal from the router.
+- Uses an existing AsusRouter integration entry. You do not enter router
+  credentials again.
+- Reads the router firmware update signal through AsusRouter.
 - When the router reports an available firmware update, maps that version to
   the matching Asuswrt-Merlin release.
 - Downloads the Merlin release zip, extracts the firmware image, and verifies
@@ -37,9 +38,7 @@ Then install **Merlin Firmware Updater** and restart Home Assistant.
 
 ## Configure
 
-Go to Settings -> Devices & services -> Add integration and choose
-**Merlin Firmware Updater**.
+First set up the normal HACS AsusRouter integration.
 
-Use the same host, username, password, SSL, and port you use for the router
-web UI.
-
+Then go to Settings -> Devices & services -> Add integration and choose
+**Merlin Firmware Updater**. Select the existing AsusRouter device to extend.

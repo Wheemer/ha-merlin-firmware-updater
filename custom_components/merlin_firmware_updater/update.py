@@ -50,19 +50,24 @@ class MerlinFirmwareUpdateEntity(
             "identifiers": {(DOMAIN, entry.entry_id)},
             "name": entry.title,
             "manufacturer": "Asuswrt-Merlin",
-            "configuration_url": self._configuration_url(),
         }
 
-    def _configuration_url(self) -> str:
+    @property
+    def device_info(self) -> dict[str, Any]:
+        """Return device info."""
+
+        info = dict(self._attr_device_info)
+        if url := self._configuration_url():
+            info["configuration_url"] = url
+        return info
+
+    def _configuration_url(self) -> str | None:
         """Return the router web UI URL."""
 
-        data = self.coordinator.entry.data
-        scheme = "https" if data.get("ssl") else "http"
-        port = data.get("port")
-        host = data["host"]
-        if port:
-            return f"{scheme}://{host}:{port}"
-        return f"{scheme}://{host}"
+        try:
+            return self.coordinator.router().bridge.configuration_url
+        except Exception:  # noqa: BLE001
+            return None
 
     @property
     def installed_version(self) -> str | None:
@@ -155,4 +160,3 @@ class MerlinFirmwareUpdateEntity(
             ) from ex
         finally:
             await self.coordinator.async_request_refresh()
-

@@ -6,32 +6,23 @@ import asyncio
 from datetime import timedelta
 import logging
 from pathlib import Path
-from typing import Any
 
-from asusrouter import AsusRouter
-from asusrouter.config.connection import ARConnectionConfigKey as ARCCKey
 from asusrouter.error import AsusRouterError
 from asusrouter.modules.firmware import ARFirmwareSourceUniversal
 from asusrouter.modules.firmware import ARFirmwareState
 from asusrouter.modules.merlin import is_merlin_firmware
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import (
-    CONF_HOST,
-    CONF_PASSWORD,
-    CONF_PORT,
-    CONF_SCAN_INTERVAL,
-    CONF_SSL,
-    CONF_USERNAME,
-)
+from homeassistant.const import CONF_SCAN_INTERVAL
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .const import (
-    CONF_VERIFY_SSL,
+    ASUSROUTER_DATA_KEY,
+    ASUSROUTER_DOMAIN,
+    CONF_ASUSROUTER_ENTRY_ID,
     DEFAULT_SCAN_INTERVAL,
-    DEFAULT_SSL,
     DEFAULT_UPDATE_INTERVAL,
-    DEFAULT_VERIFY_SSL,
     DOMAIN,
     MIN_SCAN_INTERVAL,
 )
@@ -39,7 +30,6 @@ from .models import FirmwareUpdateData
 
 _LOGGER = logging.getLogger(__name__)
 
-CONNECT_TIMEOUT = 30
 PREPARE_TIMEOUT = 20 * 60
 INSTALL_TIMEOUT = 20 * 60
 
@@ -80,23 +70,35 @@ class MerlinFirmwareCoordinator(DataUpdateCoordinator[FirmwareUpdateData]):
 
         return self._install_progress
 
-    def api(self) -> AsusRouter:
-        """Build an AsusRouter API instance for this config entry."""
+    @property
+    def asusrouter_entry_id(self) -> str:
+        """Return the linked AsusRouter config entry id."""
 
-        data = self.entry.data
-        port = data.get(CONF_PORT)
-        return AsusRouter(
-            hostname=data[CONF_HOST],
-            username=data[CONF_USERNAME],
-            password=data[CONF_PASSWORD],
-            port=port or None,
-            use_ssl=data.get(CONF_SSL, DEFAULT_SSL),
-            connection_config={
-                ARCCKey.VERIFY_SSL: data.get(
-                    CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL
-                ),
-            },
+        return self.entry.data[CONF_ASUSROUTER_ENTRY_ID]
+
+    def router(self):
+        """Return the loaded AsusRouter integration runtime object."""
+
+        router_data = self.hass.data.get(ASUSROUTER_DOMAIN, {}).get(
+            self.asusrouter_entry_id
         )
+        if not router_data:
+            raise ConfigEntryNotReady("Linked AsusRouter entry is not loaded")
+
+        router = router_data.get(ASUSROUTER_DATA_KEY)
+        if router is None:
+            raise ConfigEntryNotReady("Linked AsusRouter runtime is missing")
+        return router
+
+    def api(self):
+        """Return the linked AsusRouter API object."""
+
+        router = self.router()
+        bridge = getattr(router, "bridge", None)
+        api = getattr(bridge, "api", None)
+        if api is None:
+            raise ConfigEntryNotReady("Linked AsusRouter API is unavailable")
+        return api
 
     def cache_dir(self) -> Path:
         """Return the firmware cache directory."""
@@ -106,14 +108,14 @@ class MerlinFirmwareCoordinator(DataUpdateCoordinator[FirmwareUpdateData]):
     async def _async_update_data(self) -> FirmwareUpdateData:
         """Refresh router firmware state and prepare Merlin firmware."""
 
-        api = self.api()
         try:
-            async with asyncio.timeout(CONNECT_TIMEOUT):
-                connected = await api.async_connect()
-            if not connected:
-                raise AsusRouterError("Router login did not complete")
+            router = self.router()
+            api = self.api()
+            bridge = router.bridge
+            if not getattr(bridge, "connected", False):
+                raise ConfigEntryNotReady("Linked AsusRouter is not connected")
 
-            identity = api.description
+            identity = bridge.identity or api.description
             model = identity.product_id or identity.model
             current_version = str(identity.firmware) if identity.firmware else None
 
@@ -201,8 +203,6 @@ class MerlinFirmwareCoordinator(DataUpdateCoordinator[FirmwareUpdateData]):
                     firmware=None,
                 )
             )
-        finally:
-            await api.async_disconnect()
 
     def _remember(self, data: FirmwareUpdateData) -> FirmwareUpdateData:
         """Store the latest coordinator data."""
@@ -230,11 +230,6 @@ class MerlinFirmwareCoordinator(DataUpdateCoordinator[FirmwareUpdateData]):
             self.hass.loop.call_soon_threadsafe(self.async_update_listeners)
 
         try:
-            async with asyncio.timeout(CONNECT_TIMEOUT):
-                connected = await api.async_connect()
-            if not connected:
-                raise AsusRouterError("Router login did not complete")
-
             async with asyncio.timeout(INSTALL_TIMEOUT):
                 await api.async_install_merlin_firmware(
                     model=data.firmware.model,
@@ -245,5 +240,3 @@ class MerlinFirmwareCoordinator(DataUpdateCoordinator[FirmwareUpdateData]):
         finally:
             self._install_progress = False
             self.async_update_listeners()
-            await api.async_disconnect()
-

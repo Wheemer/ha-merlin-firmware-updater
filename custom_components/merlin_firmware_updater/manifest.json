@@ -4,6 +4,7 @@
   "codeowners": ["@Wheemer"],
   "config_flow": true,
   "documentation": "https://github.com/Wheemer/ha-merlin-firmware-updater",
+  "after_dependencies": ["asusrouter"],
   "integration_type": "device",
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/Wheemer/ha-merlin-firmware-updater/issues",
@@ -11,5 +12,5 @@
   "requirements": [
     "asusrouter @ git+https://github.com/Wheemer/merlin-asusrouter.git@1df1a62df51152fb3a45ceb47f466db00471587a"
   ],
-  "version": "0.1.0"
+  "version": "0.1.1"
 }
