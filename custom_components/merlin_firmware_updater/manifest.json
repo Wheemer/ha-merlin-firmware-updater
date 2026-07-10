@@ -1,0 +1,15 @@
+{
+  "domain": "merlin_firmware_updater",
+  "name": "Merlin Firmware Updater",
+  "codeowners": ["@Wheemer"],
+  "config_flow": true,
+  "documentation": "https://github.com/Wheemer/ha-merlin-firmware-updater",
+  "integration_type": "device",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/Wheemer/ha-merlin-firmware-updater/issues",
+  "loggers": ["asusrouter"],
+  "requirements": [
+    "asusrouter @ git+https://github.com/Wheemer/merlin-asusrouter.git@1df1a62df51152fb3a45ceb47f466db00471587a"
+  ],
+  "version": "0.1.0"
+}

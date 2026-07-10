@@ -1,0 +1,37 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Merlin Firmware Updater",
+        "description": "Connect to the router and prepare verified Asuswrt-Merlin firmware when the router reports an update.",
+        "data": {
+          "host": "Hostname or IP address",
+          "username": "Username",
+          "password": "Password",
+          "port": "Port (0 to use default)",
+          "ssl": "Use SSL",
+          "verify_ssl": "Verify SSL certificate",
+          "scan_interval": "Check interval in seconds"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Cannot connect to the router",
+      "invalid_auth": "Invalid username or password",
+      "unknown": "Unexpected error"
+    },
+    "abort": {
+      "already_configured": "This router is already configured"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Merlin Firmware Updater options",
+        "data": {
+          "scan_interval": "Check interval in seconds"
+        }
+      }
+    }
+  }
+}
