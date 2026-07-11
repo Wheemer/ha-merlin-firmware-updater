@@ -112,6 +112,9 @@ class MerlinFirmwareCoordinator(DataUpdateCoordinator[FirmwareUpdateData]):
     async def _async_update_data(self) -> FirmwareUpdateData:
         """Refresh router firmware state and prepare Merlin firmware."""
 
+        if not self._home_assistant_is_running():
+            return self._remember(self._last_data)
+
         try:
             router = self.router()
             api = self.api()
@@ -212,6 +215,14 @@ class MerlinFirmwareCoordinator(DataUpdateCoordinator[FirmwareUpdateData]):
 
         self._last_data = data
         return data
+
+    def _home_assistant_is_running(self) -> bool:
+        """Return whether Home Assistant has finished startup."""
+
+        is_running = getattr(self.hass, "is_running", False)
+        if callable(is_running):
+            return bool(is_running())
+        return bool(is_running)
 
     async def async_install_prepared(self) -> None:
         """Install the prepared Merlin firmware image."""

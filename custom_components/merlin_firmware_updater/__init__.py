@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_SCAN_INTERVAL, EVENT_HOMEASSISTANT_STARTED
 from homeassistant.core import Event, HomeAssistant, callback
 
-from .const import DEFAULT_SCAN_INTERVAL, DOMAIN, PLATFORMS
+from .const import DEFAULT_SCAN_INTERVAL, DOMAIN, PLATFORMS, STARTUP_REFRESH_DELAY
 from .coordinator import MerlinFirmwareCoordinator
 
 type MerlinFirmwareConfigEntry = ConfigEntry[MerlinFirmwareCoordinator]
@@ -32,6 +34,7 @@ async def async_setup_entry(
     async def async_deferred_refresh(event: Event | None = None) -> None:
         """Refresh router data outside the startup-critical setup path."""
 
+        await asyncio.sleep(STARTUP_REFRESH_DELAY)
         await coordinator.async_request_refresh()
 
     @callback

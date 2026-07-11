@@ -15,5 +15,6 @@ ASUSROUTER_DATA_KEY: Final = "asusrouter"
 DEFAULT_NAME: Final = "Merlin Firmware Updater"
 DEFAULT_SCAN_INTERVAL: Final = 6 * 60 * 60
 MIN_SCAN_INTERVAL: Final = 30 * 60
+STARTUP_REFRESH_DELAY: Final = 60
 
 DEFAULT_UPDATE_INTERVAL: Final = timedelta(seconds=DEFAULT_SCAN_INTERVAL)

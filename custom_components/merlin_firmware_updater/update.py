@@ -40,6 +40,7 @@ class MerlinFirmwareUpdateEntity(
         | UpdateEntityFeature.PROGRESS
         | UpdateEntityFeature.RELEASE_NOTES
     )
+    _attr_should_poll = False
 
     def __init__(self, coordinator: MerlinFirmwareCoordinator) -> None:
         """Initialize the update entity."""
