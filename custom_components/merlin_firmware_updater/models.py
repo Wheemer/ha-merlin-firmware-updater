@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from asusrouter.modules.merlin import MerlinFirmwareInfo
+from .merlin import MerlinFirmwareInfo
 
 
 @dataclass(slots=True)
@@ -21,4 +21,3 @@ class FirmwareUpdateData:
     status: str = "idle"
     error: str | None = None
     firmware: MerlinFirmwareInfo | None = None
-

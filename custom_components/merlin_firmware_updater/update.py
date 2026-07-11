@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from asusrouter.error import AsusRouterError, AsusRouterMerlinFirmwareError
+from asusrouter.error import AsusRouterError
 from homeassistant.components.update import UpdateEntity, UpdateEntityFeature
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -15,6 +15,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from . import MerlinFirmwareConfigEntry
 from .const import DOMAIN
 from .coordinator import MerlinFirmwareCoordinator
+from .merlin import MerlinFirmwareError
 
 
 async def async_setup_entry(
@@ -152,7 +153,7 @@ class MerlinFirmwareUpdateEntity(
 
         try:
             await self.coordinator.async_install_prepared()
-        except (AsusRouterError, AsusRouterMerlinFirmwareError) as ex:
+        except (AsusRouterError, MerlinFirmwareError) as ex:
             raise HomeAssistantError(str(ex)) from ex
         except Exception as ex:
             raise HomeAssistantError(

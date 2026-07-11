@@ -10,7 +10,7 @@
   "issue_tracker": "https://github.com/Wheemer/ha-merlin-firmware-updater/issues",
   "loggers": ["asusrouter"],
   "requirements": [
-    "asusrouter @ git+https://github.com/Wheemer/merlin-asusrouter.git@1df1a62df51152fb3a45ceb47f466db00471587a"
+    "asusrouter>=1.21.0"
   ],
-  "version": "0.1.1"
+  "version": "0.1.2"
 }

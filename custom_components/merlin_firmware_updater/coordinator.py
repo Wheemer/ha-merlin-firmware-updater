@@ -7,10 +7,9 @@ from datetime import timedelta
 import logging
 from pathlib import Path
 
+import aiohttp
 from asusrouter.error import AsusRouterError
-from asusrouter.modules.firmware import ARFirmwareSourceUniversal
-from asusrouter.modules.firmware import ARFirmwareState
-from asusrouter.modules.merlin import is_merlin_firmware
+from asusrouter.modules.data import AsusData
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_SCAN_INTERVAL
 from homeassistant.core import HomeAssistant
@@ -25,6 +24,11 @@ from .const import (
     DEFAULT_UPDATE_INTERVAL,
     DOMAIN,
     MIN_SCAN_INTERVAL,
+)
+from .merlin import (
+    async_prepare_merlin_firmware,
+    async_validate_merlin_firmware,
+    is_merlin_firmware,
 )
 from .models import FirmwareUpdateData
 
@@ -119,15 +123,10 @@ class MerlinFirmwareCoordinator(DataUpdateCoordinator[FirmwareUpdateData]):
             model = identity.product_id or identity.model
             current_version = str(identity.firmware) if identity.firmware else None
 
-            firmware_result = await api.async_get_data(
-                ARFirmwareSourceUniversal, force=True
+            firmware_state = await api.async_get_data(
+                AsusData.FIRMWARE, force=True
             )
-            firmware_state = (
-                firmware_result.get(ARFirmwareSourceUniversal)
-                if isinstance(firmware_result, dict)
-                else None
-            )
-            if not isinstance(firmware_state, ARFirmwareState):
+            if not isinstance(firmware_state, dict):
                 return self._remember(
                     FirmwareUpdateData(
                         model=model,
@@ -137,15 +136,17 @@ class MerlinFirmwareCoordinator(DataUpdateCoordinator[FirmwareUpdateData]):
                     )
                 )
 
-            latest = firmware_state.web.available
+            latest = firmware_state.get("available")
             latest_version = str(latest) if latest else None
             base = FirmwareUpdateData(
                 model=model,
                 mac=str(identity.mac) if identity.mac else None,
                 current_version=current_version,
                 latest_version=latest_version,
-                release_note=firmware_state.web.release_note,
-                update_available=bool(firmware_state.web.state),
+                release_note=firmware_state.get("release_note"),
+                update_available=bool(
+                    latest_version and latest_version != current_version
+                ),
                 status="no_router_update",
             )
 
@@ -166,11 +167,13 @@ class MerlinFirmwareCoordinator(DataUpdateCoordinator[FirmwareUpdateData]):
                 return self._remember(base)
 
             async with asyncio.timeout(PREPARE_TIMEOUT):
-                info = await api.async_prepare_merlin_firmware(
-                    model=model,
-                    version=latest_version,
-                    cache_dir=self.cache_dir(),
-                )
+                async with aiohttp.ClientSession() as session:
+                    info = await async_prepare_merlin_firmware(
+                        session=session,
+                        model=model,
+                        version=latest_version,
+                        cache_dir=self.cache_dir(),
+                    )
 
             prepared = bool(
                 info.firmware_name
@@ -222,6 +225,12 @@ class MerlinFirmwareCoordinator(DataUpdateCoordinator[FirmwareUpdateData]):
             raise AsusRouterError("Prepared Merlin firmware path is missing")
 
         api = self.api()
+        upload = getattr(api, "async_upload_firmware", None)
+        if upload is None:
+            raise AsusRouterError(
+                "The installed AsusRouter library does not support firmware upload"
+            )
+
         self._install_progress = 1
         self.async_update_listeners()
 
@@ -231,12 +240,16 @@ class MerlinFirmwareCoordinator(DataUpdateCoordinator[FirmwareUpdateData]):
 
         try:
             async with asyncio.timeout(INSTALL_TIMEOUT):
-                await api.async_install_merlin_firmware(
-                    model=data.firmware.model,
-                    version=data.firmware.version,
-                    firmware_path=Path(firmware_path),
-                    progress=_set_progress,
-                )
+                async with aiohttp.ClientSession() as session:
+                    await async_validate_merlin_firmware(
+                        session=session,
+                        model=data.firmware.model,
+                        version=data.firmware.version,
+                        firmware_path=Path(firmware_path),
+                    )
+                _set_progress(70)
+                await upload(Path(firmware_path))
+                _set_progress(90)
         finally:
             self._install_progress = False
             self.async_update_listeners()
