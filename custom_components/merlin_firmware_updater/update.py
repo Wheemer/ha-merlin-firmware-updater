@@ -35,11 +35,7 @@ class MerlinFirmwareUpdateEntity(
 
     _attr_has_entity_name = True
     _attr_name = "Firmware"
-    _attr_supported_features = (
-        UpdateEntityFeature.INSTALL
-        | UpdateEntityFeature.PROGRESS
-        | UpdateEntityFeature.RELEASE_NOTES
-    )
+    _attr_supported_features = UpdateEntityFeature.RELEASE_NOTES
     _attr_should_poll = False
 
     def __init__(self, coordinator: MerlinFirmwareCoordinator) -> None:
@@ -78,11 +74,24 @@ class MerlinFirmwareUpdateEntity(
         return self.coordinator.data.current_version if self.coordinator.data else None
 
     @property
+    def supported_features(self) -> UpdateEntityFeature:
+        """Return supported update features for the current backend."""
+
+        features = UpdateEntityFeature.RELEASE_NOTES
+        if self.coordinator.supports_router_firmware_upgrade():
+            features |= UpdateEntityFeature.INSTALL | UpdateEntityFeature.PROGRESS
+        return features
+
+    @property
     def latest_version(self) -> str | None:
         """Return the latest prepared Merlin firmware version."""
 
         data = self.coordinator.data
-        if not data or not data.prepared:
+        if (
+            not data
+            or not data.prepared
+            or not self.coordinator.supports_router_firmware_upgrade()
+        ):
             return self.installed_version
         return data.latest_version
 
@@ -124,6 +133,9 @@ class MerlinFirmwareUpdateEntity(
             "error": data.error,
             "router_reported_update": data.update_available,
             "prepared": data.prepared,
+            "router_firmware_upgrade_supported": (
+                self.coordinator.supports_router_firmware_upgrade()
+            ),
             "model": data.model,
             "manifest_version": info.manifest_version if info else None,
             "firmware_name": info.firmware_name if info else None,

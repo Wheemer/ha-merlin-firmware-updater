@@ -214,7 +214,8 @@ async def _download_file(
                 )
 
             downloaded = 0
-            with destination.open("wb") as file:
+            file = await asyncio.to_thread(destination.open, "wb")
+            try:
                 async for chunk in response.content.iter_chunked(CHUNK_SIZE):
                     downloaded += len(chunk)
                     if downloaded > MAX_DOWNLOAD_SIZE:
@@ -222,7 +223,9 @@ async def _download_file(
                             "Merlin download exceeded the allowed firmware "
                             "size limit"
                         )
-                    file.write(chunk)
+                    await asyncio.to_thread(file.write, chunk)
+            finally:
+                await asyncio.to_thread(file.close)
     except Exception:
         destination.unlink(missing_ok=True)
         raise
@@ -442,7 +445,9 @@ async def async_prepare_merlin_firmware(
     download_path.replace(zip_path)
     progress(35)
 
-    extracted_path = _extract_firmware(zip_path, target_dir, model, version)
+    extracted_path = await asyncio.to_thread(
+        _extract_firmware, zip_path, target_dir, model, version
+    )
     progress(45)
 
     if extracted_path.name != info.firmware_name:
@@ -510,7 +515,7 @@ async def async_validate_merlin_firmware(
     if not info.firmware_name or not info.sha256:
         raise MerlinFirmwareError(
             "No published SHA256 found for the Merlin firmware image; "
-            "refusing to upload firmware"
+            "refusing to install firmware"
         )
 
     if firmware_path.name != info.firmware_name:

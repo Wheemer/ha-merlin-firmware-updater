@@ -17,13 +17,14 @@ integration only creates a Merlin firmware update entity.
   the published SHA256.
 - Exposes a Home Assistant update entity only after the Merlin firmware image
   is prepared and verified.
-- Uploads the prepared firmware image when you press Install.
+- Starts the router's own firmware upgrade path when you press Install.
 
 ## Safety rules
 
 - Firmware is not offered if the published SHA256 is missing.
 - Firmware is not offered if the downloaded image hash does not match.
 - Firmware is not offered until the image is already extracted and ready.
+- Install uses the same router-controlled upgrade command as AsusRouter.
 - Router/network errors are kept out of Home Assistant startup.
 
 ## Install

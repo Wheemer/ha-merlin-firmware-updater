@@ -10,10 +10,12 @@ from pathlib import Path
 import aiohttp
 from asusrouter.error import AsusRouterError
 from asusrouter.modules.data import AsusData
+from asusrouter.modules.system import AsusSystem
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_SCAN_INTERVAL
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .const import (
@@ -36,6 +38,16 @@ _LOGGER = logging.getLogger(__name__)
 
 PREPARE_TIMEOUT = 20 * 60
 INSTALL_TIMEOUT = 20 * 60
+ROUTER_UPGRADE_WAIT = 120
+ASUSROUTER_FIRMWARE_UPDATE_SUFFIXES = (
+    "_firmware_update",
+    "_firmware_update_beta",
+)
+
+try:
+    _DISABLED_BY_INTEGRATION = er.RegistryEntryDisabler.INTEGRATION
+except AttributeError:
+    _DISABLED_BY_INTEGRATION = "integration"
 
 
 class MerlinFirmwareCoordinator(DataUpdateCoordinator[FirmwareUpdateData]):
@@ -104,10 +116,52 @@ class MerlinFirmwareCoordinator(DataUpdateCoordinator[FirmwareUpdateData]):
             raise ConfigEntryNotReady("Linked AsusRouter API is unavailable")
         return api
 
+    def supports_router_firmware_upgrade(self) -> bool:
+        """Return whether the linked AsusRouter API can start firmware upgrade."""
+
+        try:
+            api = self.api()
+        except ConfigEntryNotReady:
+            return False
+
+        return callable(getattr(api, "async_set_state", None))
+
     def cache_dir(self) -> Path:
         """Return the firmware cache directory."""
 
         return Path(self.hass.config.path(DOMAIN, "firmware_cache"))
+
+    async def async_hide_stock_firmware_updates(self) -> None:
+        """Disable linked AsusRouter firmware update entities."""
+
+        registry = er.async_get(self.hass)
+        entries = er.async_entries_for_config_entry(
+            registry, self.asusrouter_entry_id
+        )
+
+        for entry in entries:
+            if (
+                entry.domain != "update"
+                or entry.platform != ASUSROUTER_DOMAIN
+                or not entry.unique_id
+                or not entry.unique_id.endswith(
+                    ASUSROUTER_FIRMWARE_UPDATE_SUFFIXES
+                )
+            ):
+                continue
+
+            if entry.disabled_by is not None:
+                continue
+
+            _LOGGER.info(
+                "Disabling stock AsusRouter firmware update entity %s; "
+                "Merlin Firmware Updater provides the guarded update path",
+                entry.entity_id,
+            )
+            registry.async_update_entity(
+                entry.entity_id,
+                disabled_by=_DISABLED_BY_INTEGRATION,
+            )
 
     async def _async_update_data(self) -> FirmwareUpdateData:
         """Refresh router firmware state and prepare Merlin firmware."""
@@ -156,6 +210,8 @@ class MerlinFirmwareCoordinator(DataUpdateCoordinator[FirmwareUpdateData]):
             if not base.update_available or latest_version is None:
                 return self._remember(base)
 
+            await self.async_hide_stock_firmware_updates()
+
             if not model:
                 base.status = "missing_model"
                 base.error = "Router model is unavailable"
@@ -187,7 +243,14 @@ class MerlinFirmwareCoordinator(DataUpdateCoordinator[FirmwareUpdateData]):
             )
             base.firmware = info
             base.prepared = prepared
-            base.status = "prepared" if prepared else "prepare_failed"
+            if prepared and not self.supports_router_firmware_upgrade():
+                base.status = "router_upgrade_unsupported"
+                base.error = (
+                    "The linked AsusRouter library can detect and prepare "
+                    "firmware, but it cannot start the router firmware upgrade"
+                )
+            else:
+                base.status = "prepared" if prepared else "prepare_failed"
             if not prepared:
                 base.error = "Merlin firmware metadata was incomplete"
             return self._remember(base)
@@ -225,7 +288,7 @@ class MerlinFirmwareCoordinator(DataUpdateCoordinator[FirmwareUpdateData]):
         return bool(is_running)
 
     async def async_install_prepared(self) -> None:
-        """Install the prepared Merlin firmware image."""
+        """Start the router-controlled install of the prepared Merlin update."""
 
         data = self.data
         if not data or not data.prepared or not data.firmware:
@@ -236,18 +299,14 @@ class MerlinFirmwareCoordinator(DataUpdateCoordinator[FirmwareUpdateData]):
             raise AsusRouterError("Prepared Merlin firmware path is missing")
 
         api = self.api()
-        upload = getattr(api, "async_upload_firmware", None)
-        if upload is None:
+        set_state = getattr(api, "async_set_state", None)
+        if not callable(set_state):
             raise AsusRouterError(
-                "The installed AsusRouter library does not support firmware upload"
+                "The installed AsusRouter library cannot start firmware upgrade"
             )
 
-        self._install_progress = 1
+        self._install_progress = True
         self.async_update_listeners()
-
-        def _set_progress(progress: int) -> None:
-            self._install_progress = progress
-            self.hass.loop.call_soon_threadsafe(self.async_update_listeners)
 
         try:
             async with asyncio.timeout(INSTALL_TIMEOUT):
@@ -258,9 +317,14 @@ class MerlinFirmwareCoordinator(DataUpdateCoordinator[FirmwareUpdateData]):
                         version=data.firmware.version,
                         firmware_path=Path(firmware_path),
                     )
-                _set_progress(70)
-                await upload(Path(firmware_path))
-                _set_progress(90)
+
+                result = await set_state(state=AsusSystem.FIRMWARE_UPGRADE)
+                if not result:
+                    raise AsusRouterError(
+                        "The router rejected the firmware upgrade command"
+                    )
+
+                await asyncio.sleep(ROUTER_UPGRADE_WAIT)
         finally:
             self._install_progress = False
             self.async_update_listeners()

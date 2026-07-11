@@ -12,5 +12,5 @@
   "requirements": [
     "asusrouter>=1.21.0"
   ],
-  "version": "0.1.3"
+  "version": "0.1.5"
 }
