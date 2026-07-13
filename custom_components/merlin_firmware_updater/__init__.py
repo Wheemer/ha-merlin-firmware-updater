@@ -67,4 +67,23 @@ async def async_unload_entry(
 ) -> bool:
     """Unload a config entry."""
 
+    await _async_show_stock_firmware_updates(entry)
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+
+
+async def async_remove_entry(
+    hass: HomeAssistant, entry: MerlinFirmwareConfigEntry
+) -> None:
+    """Clean up a config entry before removal."""
+
+    await _async_show_stock_firmware_updates(entry)
+
+
+async def _async_show_stock_firmware_updates(
+    entry: MerlinFirmwareConfigEntry,
+) -> None:
+    """Restore stock AsusRouter firmware entities if coordinator is loaded."""
+
+    coordinator = getattr(entry, "runtime_data", None)
+    if coordinator is not None:
+        await coordinator.async_show_stock_firmware_updates()

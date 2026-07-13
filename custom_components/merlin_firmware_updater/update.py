@@ -78,7 +78,7 @@ class MerlinFirmwareUpdateEntity(
         """Return supported update features for the current backend."""
 
         features = UpdateEntityFeature.RELEASE_NOTES
-        if self.coordinator.supports_router_firmware_upgrade():
+        if self.coordinator.supports_merlin_firmware_install():
             features |= UpdateEntityFeature.INSTALL | UpdateEntityFeature.PROGRESS
         return features
 
@@ -90,7 +90,7 @@ class MerlinFirmwareUpdateEntity(
         if (
             not data
             or not data.prepared
-            or not self.coordinator.supports_router_firmware_upgrade()
+            or not self.coordinator.supports_merlin_firmware_install()
         ):
             return self.installed_version
         return data.latest_version
@@ -133,8 +133,8 @@ class MerlinFirmwareUpdateEntity(
             "error": data.error,
             "router_reported_update": data.update_available,
             "prepared": data.prepared,
-            "router_firmware_upgrade_supported": (
-                self.coordinator.supports_router_firmware_upgrade()
+            "merlin_firmware_install_supported": (
+                self.coordinator.supports_merlin_firmware_install()
             ),
             "model": data.model,
             "manifest_version": info.manifest_version if info else None,
@@ -142,7 +142,6 @@ class MerlinFirmwareUpdateEntity(
             "firmware_sha256": info.sha256 if info else None,
             "download_url": info.download_url if info else None,
             "download_page": info.download_page if info else None,
-            "local_firmware_path": info.local_firmware_path if info else None,
             "local_firmware_size": info.local_firmware_size if info else None,
             "cached": info.cached if info else None,
         }
@@ -156,6 +155,11 @@ class MerlinFirmwareUpdateEntity(
         self, version: str | None, backup: bool, **kwargs: Any
     ) -> None:
         """Install the prepared Merlin firmware update."""
+
+        if backup:
+            raise HomeAssistantError(
+                "Firmware backup before install is not supported."
+            )
 
         data = self.coordinator.data
         target = version or (data.latest_version if data else None)
