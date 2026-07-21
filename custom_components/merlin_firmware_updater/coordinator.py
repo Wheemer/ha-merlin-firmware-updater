@@ -7,8 +7,10 @@ from datetime import timedelta
 import hashlib
 import logging
 from pathlib import Path
+from typing import Any
 
 import aiohttp
+from asusrouter.connection_config import ARConnectionConfigKey as ARCCKey
 from asusrouter.error import AsusRouterError
 from asusrouter.modules.data import AsusData
 from homeassistant.config_entries import ConfigEntry
@@ -133,7 +135,9 @@ class MerlinFirmwareCoordinator(DataUpdateCoordinator[FirmwareUpdateData]):
 
         return callable(
             getattr(api, "async_install_merlin_firmware", None)
-        ) or callable(getattr(api, "async_upload_firmware", None))
+        ) or callable(
+            getattr(api, "async_upload_firmware", None)
+        ) or _api_has_upload_connection(api)
 
     def cache_dir(self) -> Path:
         """Return the firmware cache directory."""
@@ -475,7 +479,10 @@ class MerlinFirmwareCoordinator(DataUpdateCoordinator[FirmwareUpdateData]):
                         progress=self._install_progress_callback(),
                     )
                 else:
-                    await upload_firmware(path)
+                    if callable(upload_firmware):
+                        await upload_firmware(path)
+                    else:
+                        await _async_upload_firmware_via_connection(api, path)
                     self._set_install_progress(90)
 
                 self._set_install_progress(95)
@@ -492,3 +499,81 @@ def _sha256(path: Path) -> str:
         for chunk in iter(lambda: file.read(CHUNK_SIZE), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _api_has_upload_connection(api: Any) -> bool:
+    """Return true when the AsusRouter API exposes an authenticated connection."""
+
+    connection = getattr(api, "_connection", None)
+    return bool(connection and getattr(connection, "webpanel", None))
+
+
+async def _async_upload_firmware_via_connection(
+    api: Any, firmware_path: Path
+) -> None:
+    """Upload firmware through the released AsusRouter connection internals."""
+
+    connect = getattr(api, "async_connect", None)
+    if callable(connect):
+        connected = await connect()
+        if connected is False:
+            raise AsusRouterError("Could not connect to the router before upload")
+
+    connection = getattr(api, "_connection", None)
+    if connection is None:
+        raise AsusRouterError("Router connection is not available")
+
+    session = getattr(connection, "session", None) or getattr(
+        connection, "_session", None
+    )
+    headers = getattr(connection, "_header", None)
+    if session is None or getattr(session, "closed", True) or not headers:
+        raise AsusRouterError("Authenticated router session is not available")
+
+    verify_ssl = None
+    config = getattr(connection, "config", None) or getattr(
+        connection, "_config", None
+    )
+    if config is not None:
+        verify_ssl = config.get(ARCCKey.VERIFY_SSL)
+
+    firmware_file = await asyncio.to_thread(firmware_path.open, "rb")
+    try:
+        form = aiohttp.FormData()
+        form.add_field("current_page", "Advanced_FirmwareUpgrade_Content.asp")
+        form.add_field("next_page", "")
+        form.add_field("action_mode", "")
+        form.add_field("action_script", "")
+        form.add_field("action_wait", "")
+        form.add_field(
+            "file",
+            firmware_file,
+            filename=firmware_path.name,
+            content_type="application/octet-stream",
+        )
+
+        try:
+            async with session.post(
+                f"{connection.webpanel}/upgrade.cgi",
+                data=form,
+                headers=headers,
+                ssl=verify_ssl,
+                timeout=aiohttp.ClientTimeout(total=900),
+            ) as response:
+                if response.status != 200:
+                    raise AsusRouterError(
+                        "Router firmware upload failed with HTTP "
+                        f"{response.status}"
+                    )
+
+                text = await response.text(errors="ignore")
+                if "UpdateError" in text:
+                    raise AsusRouterError(
+                        "The router rejected the uploaded firmware image"
+                    )
+        except aiohttp.ServerDisconnectedError:
+            _LOGGER.debug("Router disconnected during firmware upload")
+        except aiohttp.ClientError as ex:
+            raise AsusRouterError("Router firmware upload failed") from ex
+    finally:
+        await asyncio.to_thread(firmware_file.close)
